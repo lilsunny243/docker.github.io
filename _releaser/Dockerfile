@@ -41,13 +41,13 @@ RUN --mount=type=bind,from=sitedir,target=/site \
 FROM base AS aws-s3-update-config
 ARG AWS_REGION
 ARG AWS_S3_BUCKET
-ARG AWS_S3_CONFIG
 RUN --mount=type=bind,target=. \
   --mount=type=bind,from=releaser,source=/out/releaser,target=/usr/bin/releaser \
   --mount=type=secret,id=AWS_ACCESS_KEY_ID \
   --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
   AWS_ACCESS_KEY_ID=$(cat /run/secrets/AWS_ACCESS_KEY_ID) \
   AWS_SECRET_ACCESS_KEY=$(cat /run/secrets/AWS_SECRET_ACCESS_KEY) \
+  AWS_S3_CONFIG=s3-config.json \
   releaser aws s3-update-config
 
 FROM base AS aws-lambda-invoke
@@ -72,5 +72,6 @@ RUN --mount=type=bind,target=. \
   AWS_ACCESS_KEY_ID=$(cat /run/secrets/AWS_ACCESS_KEY_ID) \
   AWS_SECRET_ACCESS_KEY=$(cat /run/secrets/AWS_SECRET_ACCESS_KEY) \
   AWS_LAMBDA_FUNCTION_FILE=cloudfront-lambda-redirects.js \
-  REDIRECTS_JSON=$(cat /site/redirects.json) \
+  REDIRECTS_JSON=$(jq -c '.' /site/redirects.json) \
+  REDIRECTS_PREFIXES_JSON=$(jq -c '.' redirects-prefixes.json) \
   releaser aws cloudfront-update
