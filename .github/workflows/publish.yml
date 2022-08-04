@@ -8,6 +8,11 @@ on:
       - master
       - published
 
+# these permissions are needed to interact with GitHub's OIDC Token endpoint.
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-20.04
@@ -20,23 +25,27 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/master" ]; then
             DOCS_URL="https://docs-stage.docker.com"
             DOCS_S3_BUCKET="docs.docker.com-stage-us-east-1"
-            DOCS_CLOUDFRONT_ID="E2Q9X128R7SWCF" # FIXME: use correct cloudfront ID
-            DOCS_LAMBDA_FUNCTION_REDIRECTS="DockerDocsRedirectFunction" # FIXME: make sure this lambda edge function eixsts
             DOCS_LAMBDA_FUNCTION_CACHE="arn:aws:lambda:us-east-1:710015040892:function:docs-stage-cache-invalidator"
             DOCS_SLACK_MSG="Successfully promoted docs-stage from master. https://docs-stage.docker.com/"
+            # TODO: remove secrets once moved to OIDC auth
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" = "refs/heads/published" ]; then
             JEKYLL_ENV=production
             DOCS_URL="https://docs.docker.com"
             DOCS_S3_BUCKET="docs.docker.com-us-east-1"
-            DOCS_CLOUDFRONT_ID="E2Q9X128R7SWCF" # FIXME: use correct cloudfront ID
-            DOCS_LAMBDA_FUNCTION_REDIRECTS="DockerDocsRedirectFunction" # FIXME: make sure this lambda edge function eixsts
             DOCS_LAMBDA_FUNCTION_CACHE="arn:aws:lambda:us-east-1:710015040892:function:docs-cache-invalidator"
             DOCS_SLACK_MSG="Successfully published docs. https://docs.docker.com/"
+            # TODO: remove secrets once moved to OIDC auth
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           elif [ "${{ github.ref }}" = "refs/heads/lab" ]; then
-            DOCS_URL="https://docs-lab.docker.com"
-            DOCS_S3_BUCKET=""
+            DOCS_URL="https://docs-labs.docker.com"
+            DOCS_AWS_IAM_ROLE="arn:aws:iam::710015040892:role/labs-docs-docker.github.io-20220728143917865600000003"
+            DOCS_S3_BUCKET="labs-docs-docker.github.io"
+            DOCS_CLOUDFRONT_ID="E1MYDYF65FW3HG"
+            DOCS_LAMBDA_FUNCTION_REDIRECTS="DockerDocsRedirectFunction"
             DOCS_LAMBDA_FUNCTION_CACHE=""
-            DOCS_S3_CONFIG="_website-config-docs-lab.json"
           else
             echo >&2 "ERROR: unknown branch ${{ github.ref }}"
             exit 1
@@ -44,6 +53,7 @@ jobs:
           echo "JEKYLL_ENV=$JEKYLL_ENV" >> $GITHUB_ENV
           echo "DOCS_URL=$DOCS_URL" >> $GITHUB_ENV
           echo "DOCS_AWS_REGION=$DOCS_AWS_REGION" >> $GITHUB_ENV
+          echo "DOCS_AWS_IAM_ROLE=$DOCS_AWS_IAM_ROLE" >> $GITHUB_ENV
           echo "DOCS_S3_BUCKET=$DOCS_S3_BUCKET" >> $GITHUB_ENV
           echo "DOCS_CLOUDFRONT_ID=$DOCS_CLOUDFRONT_ID" >> $GITHUB_ENV
           echo "DOCS_LAMBDA_FUNCTION_REDIRECTS=$DOCS_LAMBDA_FUNCTION_REDIRECTS" >> $GITHUB_ENV
@@ -64,12 +74,16 @@ jobs:
             *.cache-from=type=gha,scope=publish
             *.cache-to=type=gha,scope=publish,mode=max
       -
+        name: Configure AWS Credentials
+        if: ${{ env.DOCS_AWS_IAM_ROLE != '' }}
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ env.DOCS_AWS_IAM_ROLE }}
+          aws-region: ${{ env.DOCS_AWS_REGION }}
+      -
         name: Upload files to S3 bucket
         run: |
           aws --region ${{ env.DOCS_AWS_REGION }} s3 sync --acl public-read _site s3://${{ env.DOCS_S3_BUCKET }}/ --delete
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       -
         name: Update S3 config
         uses: docker/bake-action@v2
@@ -78,18 +92,15 @@ jobs:
           set: |
             *.cache-from=type=gha,scope=releaser
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ env.DOCS_AWS_REGION }}
           AWS_S3_BUCKET: ${{ env.DOCS_S3_BUCKET }}
       -
         name: Update Cloudfront config
+        if: ${{ env.DOCS_CLOUDFRONT_ID != '' }}
         uses: docker/bake-action@v2
         with:
           targets: aws-cloudfront-update
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1 # cloudfront and lambda edge functions are only available in us-east-1 region
           AWS_CLOUDFRONT_ID: ${{ env.DOCS_CLOUDFRONT_ID }}
           AWS_LAMBDA_FUNCTION: ${{ env.DOCS_LAMBDA_FUNCTION_REDIRECTS }}
@@ -102,8 +113,6 @@ jobs:
           set: |
             *.cache-from=type=gha,scope=releaser
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ env.DOCS_AWS_REGION }}
           AWS_LAMBDA_FUNCTION: ${{ env.DOCS_LAMBDA_FUNCTION_CACHE }}
       -

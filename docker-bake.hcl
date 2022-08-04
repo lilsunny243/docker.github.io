@@ -127,7 +127,8 @@ target "_common-aws" {
   }
   secret = [
     "id=AWS_ACCESS_KEY_ID,env=AWS_ACCESS_KEY_ID",
-    "id=AWS_SECRET_ACCESS_KEY,env=AWS_SECRET_ACCESS_KEY"
+    "id=AWS_SECRET_ACCESS_KEY,env=AWS_SECRET_ACCESS_KEY",
+    "id=AWS_SESSION_TOKEN,env=AWS_SESSION_TOKEN"
   ]
 }
 

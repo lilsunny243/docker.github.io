@@ -45,8 +45,10 @@ RUN --mount=type=bind,target=. \
   --mount=type=bind,from=releaser,source=/out/releaser,target=/usr/bin/releaser \
   --mount=type=secret,id=AWS_ACCESS_KEY_ID \
   --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
+  --mount=type=secret,id=AWS_SESSION_TOKEN \
   AWS_ACCESS_KEY_ID=$(cat /run/secrets/AWS_ACCESS_KEY_ID) \
   AWS_SECRET_ACCESS_KEY=$(cat /run/secrets/AWS_SECRET_ACCESS_KEY) \
+  AWS_SESSION_TOKEN=$(cat /run/secrets/AWS_SESSION_TOKEN) \
   AWS_S3_CONFIG=s3-config.json \
   releaser aws s3-update-config
 
@@ -56,8 +58,10 @@ ARG AWS_LAMBDA_FUNCTION
 RUN --mount=type=bind,from=releaser,source=/out/releaser,target=/usr/bin/releaser \
   --mount=type=secret,id=AWS_ACCESS_KEY_ID \
   --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
+  --mount=type=secret,id=AWS_SESSION_TOKEN \
   AWS_ACCESS_KEY_ID=$(cat /run/secrets/AWS_ACCESS_KEY_ID) \
   AWS_SECRET_ACCESS_KEY=$(cat /run/secrets/AWS_SECRET_ACCESS_KEY) \
+  AWS_SESSION_TOKEN=$(cat /run/secrets/AWS_SESSION_TOKEN) \
   releaser aws lambda-invoke
 
 FROM base AS aws-cloudfront-update
@@ -69,8 +73,10 @@ RUN --mount=type=bind,target=. \
   --mount=type=bind,from=releaser,source=/out/releaser,target=/usr/bin/releaser \
   --mount=type=secret,id=AWS_ACCESS_KEY_ID \
   --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
+  --mount=type=secret,id=AWS_SESSION_TOKEN \
   AWS_ACCESS_KEY_ID=$(cat /run/secrets/AWS_ACCESS_KEY_ID) \
   AWS_SECRET_ACCESS_KEY=$(cat /run/secrets/AWS_SECRET_ACCESS_KEY) \
+  AWS_SESSION_TOKEN=$(cat /run/secrets/AWS_SESSION_TOKEN) \
   AWS_LAMBDA_FUNCTION_FILE=cloudfront-lambda-redirects.js \
   REDIRECTS_JSON=$(jq -c '.' /site/redirects.json) \
   REDIRECTS_PREFIXES_JSON=$(jq -c '.' redirects-prefixes.json) \
