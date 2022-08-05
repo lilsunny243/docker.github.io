@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudfront"
 	"github.com/aws/aws-sdk-go/service/lambda"
@@ -116,11 +117,9 @@ func (s *AwsCloudfrontUpdateCmd) Run() error {
 		Region: aws.String(s.Region),
 	})
 
-	function, err := svc.GetFunction(&lambda.GetFunctionInput{
-		FunctionName: aws.String(s.Function),
-	})
+	function, err := getLambdaFunction(s.Function, svc)
 	if err != nil {
-		return fmt.Errorf("cannot find lambda function %q: %w", s.Function, err)
+		return err
 	}
 	codeSha256 := *function.Configuration.CodeSha256
 	log.Printf("INFO: updating lambda function %q\n", s.Function)
@@ -203,6 +202,27 @@ func (s *AwsCloudfrontUpdateCmd) Run() error {
 
 	log.Printf("INFO: cloudfront config updated successfully\n")
 	return nil
+}
+
+func getLambdaFunction(f string, svc *lambda.Lambda) (*lambda.GetFunctionOutput, error) {
+	function, err := svc.GetFunction(&lambda.GetFunctionInput{
+		FunctionName: aws.String(f),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+			return nil, fmt.Errorf("cannot find lambda function %q: %w", f, err)
+		}
+		_, err = svc.CreateFunction(&lambda.CreateFunctionInput{
+			FunctionName: aws.String(f),
+		})
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() != lambda.ErrCodeResourceConflictException {
+			return nil, err
+		}
+		function, err = svc.GetFunction(&lambda.GetFunctionInput{
+			FunctionName: aws.String(f),
+		})
+	}
+	return function, err
 }
 
 func getLambdaFunctionZip(funcFilename string, redirectsJSON string, redirectsPrefixesJSON string) ([]byte, error) {
